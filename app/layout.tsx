@@ -15,8 +15,24 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pastex | Neo-Brutalism Sharing",
-  description: "Real-time, peer-to-peer text and file sharing web application.",
+  title: "Pastex | Secure P2P File & Text Sharing",
+  description: "Pastex is a secure, real-time, peer-to-peer text and file sharing web application. No logins, no limits, instant transfers. Open-source and built for speed.",
+  keywords: "p2p file sharing, webrtc, secure text sharing, no login file transfer, open source, pastex, neo brutalism UI",
+  authors: [{ name: "Pastex" }],
+  creator: "Pastex",
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://pastex.app",
+    title: "Pastex | Secure P2P File & Text Sharing",
+    description: "Instantly share files and text peer-to-peer securely. No logins required.",
+    siteName: "Pastex",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pastex | Secure P2P File & Text Sharing",
+    description: "Instantly share files and text peer-to-peer securely. No logins required.",
+  },
 };
 
 export default function RootLayout({

@@ -31,6 +31,17 @@ body {
   font-family: var(--font-display);
 }
 
+/* Custom Neo-Brutalism Cursors (Desktop only) */
+@media (hover: hover) and (pointer: fine) {
+  body {
+    cursor: url('/cursor-default.svg') 4 4, auto;
+  }
+  
+  a, button, input, textarea, select, .cursor-hover, [role="button"] {
+    cursor: url('/cursor-pointer.svg') 12 2, pointer !important;
+  }
+}
+
 @layer utilities {
   /* Common utility for buttons to create the 'press' effect */
   .btn-press {

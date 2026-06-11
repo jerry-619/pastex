@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Board Shadow -->
+  <rect x="128" y="132" width="320" height="340" fill="#121212" />
+  
+  <!-- Board Body (Yellow) -->
+  <rect x="96" y="100" width="320" height="340" fill="#FFE800" stroke="#121212" stroke-width="32" stroke-linejoin="miter"/>
+  
+  <!-- Text Lines -->
+  <line x1="160" y1="220" x2="352" y2="220" stroke="#121212" stroke-width="32" stroke-linecap="square"/>
+  <line x1="160" y1="300" x2="352" y2="300" stroke="#121212" stroke-width="32" stroke-linecap="square"/>
+  <line x1="160" y1="380" x2="288" y2="380" stroke="#121212" stroke-width="32" stroke-linecap="square"/>
+
+  <!-- Clip (Pink) -->
+  <rect x="176" y="48" width="160" height="80" rx="16" fill="#FF0055" stroke="#121212" stroke-width="32" stroke-linejoin="miter"/>
+  
+  <!-- Clip Hole -->
+  <circle cx="256" cy="88" r="16" fill="#121212" />
+</svg>
