@@ -30,6 +30,14 @@ const getPeerName = (id: string) => {
   return `${adj} ${noun}`;
 };
 
+interface ActiveTransfer {
+  id: string;
+  name: string;
+  progress: number;
+  totalSize: number;
+  direction: 'sending' | 'receiving';
+}
+
 export default function RoomDashboard({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const roomId = resolvedParams.id;
@@ -41,6 +49,8 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const [peerStates, setPeerStates] = useState<Record<string, string>>({});
   const [roomState, setRoomState] = useState<any>(null);
   const [userId, setUserId] = useState<string>("");
+  const [activeTransfers, setActiveTransfers] = useState<ActiveTransfer[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   
   useEffect(() => {
     let storedId = localStorage.getItem("pastex_user_id");
@@ -73,12 +83,14 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
           name: data.name,
           type: data.fileType
         };
+        setActiveTransfers(prev => [...prev, { id: data.id, name: data.name, progress: 0, totalSize: data.size, direction: 'receiving' }]);
       } else if (data.type === "eof") {
         const bufferInfo = receivedBuffersRef.current[data.id];
         if (bufferInfo) {
           const blob = new Blob(bufferInfo.chunks, { type: bufferInfo.type });
           const url = URL.createObjectURL(blob);
           setFiles(prev => [...prev, { name: bufferInfo.name, url, size: bufferInfo.totalSize }]);
+          setActiveTransfers(prev => prev.filter(t => t.id !== data.id));
           delete receivedBuffersRef.current[data.id];
         }
       }
@@ -89,6 +101,13 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
         const bufferInfo = receivedBuffersRef.current[activeTransferId];
         bufferInfo.chunks.push(event.data);
         bufferInfo.receivedSize += event.data.byteLength;
+        
+        // Update UI every ~1MB to avoid freezing
+        if (bufferInfo.chunks.length % 64 === 0) {
+          setActiveTransfers(prev => prev.map(t => 
+            t.id === activeTransferId ? { ...t, progress: bufferInfo.receivedSize } : t
+          ));
+        }
       }
     }
   }, []);
@@ -289,15 +308,13 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!myPermissions.canFile) {
-      alert("You don't have permission to send files.");
-      e.target.value = '';
+  const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+
+  const processFile = async (file: File) => {
+    if (file.size > MAX_FILE_SIZE) {
+      alert(`File is too large! Maximum allowed size is 20MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
       return;
     }
-
-    const file = e.target.files?.[0];
-    if (!file) return;
 
     const fileId = Math.random().toString(36).substring(7);
     const metaData = JSON.stringify({
@@ -307,37 +324,79 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
       size: file.size,
       fileType: file.type
     });
-
-    const eofData = JSON.stringify({
-      type: "eof",
-      id: fileId
-    });
+    const eofData = JSON.stringify({ type: "eof", id: fileId });
 
     const buffer = await file.arrayBuffer();
-    
     const channels = Object.values(dataChannelsRef.current).filter(c => c.readyState === "open");
 
     if (channels.length === 0) {
-      alert("No active peer connections. Please wait a moment for the WebRTC connection to establish, or ensure the other peer is still in the room.");
-      e.target.value = '';
+      alert("No active peer connections. Please wait a moment or ensure the other peer is still in the room.");
       return;
     }
 
+    setActiveTransfers(prev => [...prev, { id: fileId, name: file.name, progress: 0, totalSize: file.size, direction: 'sending' }]);
     channels.forEach(channel => channel.send(metaData));
 
     let offset = 0;
-    while (offset < buffer.byteLength) {
-      const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
-      channels.forEach(channel => channel.send(chunk));
-      offset += CHUNK_SIZE;
-    }
+    let chunksSent = 0;
 
-    channels.forEach(channel => channel.send(eofData));
+    const sendChunks = async () => {
+      while (offset < buffer.byteLength) {
+        const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
+        channels.forEach(channel => channel.send(chunk));
+        offset += CHUNK_SIZE;
+        chunksSent++;
+
+        // Yield to event loop every 1MB (64 chunks) to render UI
+        if (chunksSent % 64 === 0) {
+          setActiveTransfers(prev => prev.map(t => 
+            t.id === fileId ? { ...t, progress: Math.min(offset, file.size) } : t
+          ));
+          await new Promise(r => setTimeout(r, 1));
+        }
+      }
+
+      channels.forEach(channel => channel.send(eofData));
+      const url = URL.createObjectURL(file);
+      setFiles(prev => [...prev, { name: file.name, url, size: file.size }]);
+      setActiveTransfers(prev => prev.filter(t => t.id !== fileId));
+    };
+
+    sendChunks();
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!myPermissions.canFile) {
+      alert("You don't have permission to send files.");
+      e.target.value = '';
+      return;
+    }
+    const file = e.target.files?.[0];
+    if (file) {
+      await processFile(file);
+      e.target.value = '';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (myPermissions.canFile) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (!myPermissions.canFile) return;
     
-    const url = URL.createObjectURL(file);
-    setFiles(prev => [...prev, { name: file.name, url, size: file.size }]);
-    
-    e.target.value = '';
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      processFile(file);
+    }
   };
 
   return (
@@ -476,16 +535,54 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
             DATA_TRANSFER
           </h2>
           
-          <label className={`flex-shrink-0 border-4 border-neo-black bg-neo-white flex flex-col items-center justify-center p-12 text-center transition-colors shadow-hard-lg ${myPermissions.canFile ? 'hover:bg-neo-blue hover:text-white cursor-pointer group btn-press' : 'opacity-60 cursor-not-allowed bg-gray-100'}`}>
+          <label 
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`flex-shrink-0 border-4 border-neo-black bg-neo-white flex flex-col items-center justify-center p-12 text-center transition-colors shadow-hard-lg ${myPermissions.canFile ? (isDragging ? 'bg-neo-yellow border-dashed scale-[1.02]' : 'hover:bg-neo-blue hover:text-white cursor-pointer group btn-press') : 'opacity-60 cursor-not-allowed bg-gray-100'}`}
+          >
             <input type="file" className="hidden" onChange={handleFileUpload} disabled={!myPermissions.canFile} />
             <div className={`bg-neo-pink border-4 border-neo-black p-4 mb-6 shadow-hard ${myPermissions.canFile ? 'group-hover:scale-110 transition-transform' : ''}`}>
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter" className="text-neo-black"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
             </div>
-            <p className="text-3xl font-black uppercase mb-2">{myPermissions.canFile ? 'SELECT FILE' : 'NO PERMISSION'}</p>
+            <p className="text-3xl font-black uppercase mb-2">{!myPermissions.canFile ? 'NO PERMISSION' : isDragging ? 'DROP FILE HERE' : 'SELECT OR DROP FILE'}</p>
             <p className="text-base font-mono font-bold border-t-2 border-current pt-2 mt-2 w-1/2 mx-auto">
-              Broadcasts via P2P
+              Max Size: 20MB
             </p>
           </label>
+
+          {/* Active Transfers */}
+          {activeTransfers.length > 0 && (
+            <div className="flex flex-col gap-4 mt-2">
+              <h3 className="text-xl font-black uppercase bg-neo-yellow text-neo-black px-3 py-1 w-fit border-2 border-neo-black shadow-hard flex items-center gap-2">
+                <div className="w-2 h-2 bg-neo-red rounded-full animate-pulse"></div>
+                ACTIVE_TRANSFERS
+              </h3>
+              {activeTransfers.map((t) => {
+                const percent = Math.min(100, Math.round((t.progress / t.totalSize) * 100));
+                const mbProgress = (t.progress / 1024 / 1024).toFixed(2);
+                const mbTotal = (t.totalSize / 1024 / 1024).toFixed(2);
+                const isSending = t.direction === 'sending';
+                return (
+                  <div key={t.id} className="flex flex-col gap-2 bg-neo-white border-4 border-neo-black p-4 shadow-hard">
+                    <div className="flex justify-between items-center font-black uppercase">
+                      <span className="truncate max-w-[60%]">{t.name}</span>
+                      <span className={isSending ? 'text-neo-blue' : 'text-neo-green'}>
+                        {isSending ? 'SENDING...' : 'RECEIVING...'}
+                      </span>
+                    </div>
+                    <div className="h-4 w-full bg-gray-200 border-2 border-neo-black relative overflow-hidden">
+                      <div className={`h-full ${isSending ? 'bg-neo-blue' : 'bg-neo-green'} transition-all duration-300`} style={{ width: `${percent}%` }}></div>
+                    </div>
+                    <div className="flex justify-between text-xs font-mono font-bold">
+                      <span>{mbProgress} MB / {mbTotal} MB</span>
+                      <span>{percent}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* File List */}
           {files.length > 0 && (
