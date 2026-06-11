@@ -66,14 +66,20 @@ app.prepare().then(() => {
      * Handles a user joining a specific room.
      * @param {string} roomId - The unique 6-character room identifier.
      */
-    socket.on("join-room", ({ roomId, userId }) => {
+    socket.on("join-room", ({ roomId, userId, action }) => {
       socket.data = { userId };
-      socket.join(roomId);
-      console.log(`Socket ${socket.id} (User: ${userId}) joined room ${roomId}`);
       
       if (!roomStates[roomId]) {
-        roomStates[roomId] = { host: userId, permissions: {}, sockets: {} };
+        if (action === 'create') {
+          roomStates[roomId] = { host: userId, permissions: {}, sockets: {} };
+        } else {
+          socket.emit("room-error", "Room does not exist! Please create a new room from the home page.");
+          return;
+        }
       }
+      
+      socket.join(roomId);
+      console.log(`Socket ${socket.id} (User: ${userId}) joined room ${roomId}`);
       
       roomStates[roomId].sockets[socket.id] = userId;
       

@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 
 const ICE_SERVERS = {
@@ -38,9 +39,16 @@ interface ActiveTransfer {
   direction: 'sending' | 'receiving';
 }
 
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'warning' | 'info';
+}
+
 export default function RoomDashboard({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const roomId = resolvedParams.id;
+  const router = useRouter();
   
   const [clipboardText, setClipboardText] = useState("");
   const [userCount, setUserCount] = useState(1);
@@ -51,6 +59,21 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const [userId, setUserId] = useState<string>("");
   const [activeTransfers, setActiveTransfers] = useState<ActiveTransfer[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [customAlert, setCustomAlert] = useState<{ title: string, message: string, onConfirm?: () => void } | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const myPermissionsRef = useRef({ canText: false, canFile: false });
+
+  const showAlert = (title: string, message: string, onConfirm?: () => void) => {
+    setCustomAlert({ title, message, onConfirm });
+  };
+  
+  const showToast = (message: string, type: 'success' | 'warning' | 'info' = 'info') => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+  };
   
   useEffect(() => {
     let storedId = localStorage.getItem("pastex_user_id");
@@ -188,11 +211,31 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
 
     socket.on("connect", () => {
       setIsConnected(true);
-      socket.emit("join-room", { roomId, userId });
+      const action = new URLSearchParams(window.location.search).get('action');
+      socket.emit("join-room", { roomId, userId, action });
+    });
+
+    socket.on("room-error", (msg: string) => {
+      showAlert("SYSTEM ERROR", msg, () => router.push("/"));
     });
 
     socket.on("permissions-updated", (state: any) => {
       setRoomState(state);
+      
+      const newPerms = state.permissions?.[userId] || { canText: false, canFile: false };
+      const oldPerms = myPermissionsRef.current;
+      
+      if (oldPerms.canText !== undefined) {
+        if (newPerms.canText && !oldPerms.canText) showToast("TEXT PERMISSION GRANTED", "success");
+        if (!newPerms.canText && oldPerms.canText) showToast("TEXT PERMISSION REVOKED", "warning");
+      }
+      
+      if (oldPerms.canFile !== undefined) {
+        if (newPerms.canFile && !oldPerms.canFile) showToast("FILE PERMISSION GRANTED", "success");
+        if (!newPerms.canFile && oldPerms.canFile) showToast("FILE PERMISSION REVOKED", "warning");
+      }
+      
+      myPermissionsRef.current = newPerms;
     });
 
     socket.on("disconnect", () => {
@@ -312,7 +355,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
 
   const processFile = async (file: File) => {
     if (file.size > MAX_FILE_SIZE) {
-      alert(`File is too large! Maximum allowed size is 20MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
+      showAlert("FILE TOO LARGE", `Maximum allowed size is 20MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
       return;
     }
 
@@ -330,7 +373,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
     const channels = Object.values(dataChannelsRef.current).filter(c => c.readyState === "open");
 
     if (channels.length === 0) {
-      alert("No active peer connections. Please wait a moment or ensure the other peer is still in the room.");
+      showAlert("NO CONNECTION", "No active peer connections. Please wait a moment or ensure the other peer is still in the room.");
       return;
     }
 
@@ -342,6 +385,13 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
 
     const sendChunks = async () => {
       while (offset < buffer.byteLength) {
+        // Prevent RTCDataChannel "send queue is full" error by checking buffer limit
+        let isBufferFull = channels.some(channel => channel.bufferedAmount > 1024 * 1024 * 2); // 2MB limit
+        while (isBufferFull) {
+          await new Promise(r => setTimeout(r, 50));
+          isBufferFull = channels.some(channel => channel.bufferedAmount > 1024 * 1024 * 2);
+        }
+
         const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
         channels.forEach(channel => channel.send(chunk));
         offset += CHUNK_SIZE;
@@ -367,7 +417,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!myPermissions.canFile) {
-      alert("You don't have permission to send files.");
+      showAlert("ACCESS DENIED", "You don't have permission to send files.");
       e.target.value = '';
       return;
     }
@@ -401,6 +451,39 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
 
   return (
     <div className="min-h-screen bg-neo-white text-neo-black font-display flex flex-col selection:bg-neo-black selection:text-neo-yellow">
+      
+      {/* Custom Alert Modal */}
+      {customAlert && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-neo-black/80 backdrop-blur-sm p-4">
+          <div className="bg-neo-white border-4 border-neo-black p-6 md:p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-md w-full animate-bounce-in">
+            <h2 className="text-3xl font-black uppercase mb-4 border-b-4 border-neo-black pb-2 text-neo-red">{customAlert.title}</h2>
+            <p className="text-lg font-mono font-bold mb-8">{customAlert.message}</p>
+            <button
+              onClick={() => {
+                const onConfirm = customAlert.onConfirm;
+                setCustomAlert(null);
+                if (onConfirm) onConfirm();
+              }}
+              className="w-full bg-neo-yellow text-neo-black border-4 border-neo-black font-black uppercase py-3 text-xl hover:bg-neo-blue hover:text-white transition-colors shadow-hard btn-press"
+            >
+              UNDERSTOOD
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notifications */}
+      <div className="fixed bottom-4 right-4 z-[200] flex flex-col gap-3 pointer-events-none">
+        {toasts.map(t => (
+          <div key={t.id} className={`pointer-events-auto border-4 border-neo-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] animate-bounce-in flex items-center gap-3 ${t.type === 'success' ? 'bg-neo-green text-neo-black' : t.type === 'warning' ? 'bg-neo-red text-white' : 'bg-neo-blue text-white'}`}>
+            {t.type === 'success' && <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>}
+            {t.type === 'warning' && <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
+            {t.type === 'info' && <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>}
+            <span className="font-mono font-bold uppercase">{t.message}</span>
+          </div>
+        ))}
+      </div>
+
       {/* Neo-Brutalism Header */}
       <header className="border-b-4 border-neo-black bg-neo-yellow p-4 flex flex-col md:flex-row items-center justify-between sticky top-0 z-50 shadow-hard-lg">
         <div className="flex items-center gap-4 mb-4 md:mb-0 w-full md:w-auto">

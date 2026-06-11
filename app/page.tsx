@@ -10,7 +10,7 @@ export default function Home() {
   const handleCreateRoom = () => {
     // Generate a random 6-character room code
     const newRoomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    router.push(`/room/${newRoomCode}`);
+    router.push(`/room/${newRoomCode}?action=create`);
   };
 
   const handleJoinRoom = (e: React.FormEvent) => {
