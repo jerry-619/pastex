@@ -21,23 +21,41 @@ app.prepare().then(() => {
 
   const broadcastPermissions = (roomId) => {
     if (roomStates[roomId]) {
-      io.to(roomId).emit("permissions-updated", roomStates[roomId]);
+      const { host, permissions, sockets } = roomStates[roomId];
+      io.to(roomId).emit("permissions-updated", { host, permissions, sockets });
     }
   };
 
-  const autoAssignHost = (roomId) => {
-    const room = io.sockets.adapter.rooms.get(roomId);
-    if (!room || room.size === 0) {
-      delete roomStates[roomId];
-      return;
+  const broadcastUserCount = (roomId) => {
+    if (roomStates[roomId] && roomStates[roomId].sockets) {
+      const uniqueUsers = new Set(Object.values(roomStates[roomId].sockets));
+      io.to(roomId).emit("room-user-count", uniqueUsers.size);
+    } else {
+      io.to(roomId).emit("room-user-count", 0);
     }
-    if (roomStates[roomId] && !room.has(roomStates[roomId].host)) {
-      const nextHost = room.values().next().value;
-      if (nextHost) {
-        roomStates[roomId].host = nextHost;
-        roomStates[roomId].permissions[nextHost] = { canText: true, canFile: true };
-        broadcastPermissions(roomId);
-      }
+  };
+
+  const autoAssignHost = (roomId, disconnectedUserId) => {
+    if (roomStates[roomId] && roomStates[roomId].host === disconnectedUserId) {
+      roomStates[roomId].autoAssignTimer = setTimeout(() => {
+        if (!roomStates[roomId]) return;
+        
+        const room = io.sockets.adapter.rooms.get(roomId);
+        if (!room || room.size === 0) {
+          delete roomStates[roomId];
+          return;
+        }
+        
+        // Pick the first available socket's userId as the new host
+        const firstSocketId = room.values().next().value;
+        const nextHostId = roomStates[roomId].sockets[firstSocketId];
+        
+        if (nextHostId) {
+          roomStates[roomId].host = nextHostId;
+          roomStates[roomId].permissions[nextHostId] = { canText: true, canFile: true };
+          broadcastPermissions(roomId);
+        }
+      }, 7000); // 3-second grace period
     }
   };
 
@@ -48,34 +66,45 @@ app.prepare().then(() => {
      * Handles a user joining a specific room.
      * @param {string} roomId - The unique 6-character room identifier.
      */
-    socket.on("join-room", (roomId) => {
+    socket.on("join-room", ({ roomId, userId }) => {
+      socket.data = { userId };
       socket.join(roomId);
-      console.log(`Socket ${socket.id} joined room ${roomId}`);
+      console.log(`Socket ${socket.id} (User: ${userId}) joined room ${roomId}`);
       
       if (!roomStates[roomId]) {
-        roomStates[roomId] = { host: socket.id, permissions: {} };
+        roomStates[roomId] = { host: userId, permissions: {}, sockets: {} };
       }
-      // By default, only the host can text and send files
-      const isHost = roomStates[roomId].host === socket.id;
-      roomStates[roomId].permissions[socket.id] = { canText: isHost, canFile: isHost };
+      
+      roomStates[roomId].sockets[socket.id] = userId;
+      
+      // If user reconnects, clear any pending auto-assign timer
+      if (roomStates[roomId].host === userId && roomStates[roomId].autoAssignTimer) {
+        clearTimeout(roomStates[roomId].autoAssignTimer);
+        delete roomStates[roomId].autoAssignTimer;
+      }
+      
+      // Assign default permissions if they don't have any yet
+      if (!roomStates[roomId].permissions[userId]) {
+        const isHost = roomStates[roomId].host === userId;
+        roomStates[roomId].permissions[userId] = { canText: isHost, canFile: isHost };
+      }
       
       // Notify others in the room
       socket.to(roomId).emit("user-joined", socket.id);
       
-      // Get count of clients in room
-      const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-      io.to(roomId).emit("room-user-count", roomSize);
-      
+      broadcastUserCount(roomId);
       broadcastPermissions(roomId);
     });
 
     /**
      * Handle host toggling permissions
      */
-    socket.on("update-permission", ({ roomId, targetId, canText, canFile }) => {
-      if (roomStates[roomId] && roomStates[roomId].host === socket.id) {
-        if (roomStates[roomId].permissions[targetId]) {
-          roomStates[roomId].permissions[targetId] = { canText, canFile };
+    socket.on("update-permission", ({ roomId, targetSocketId, canText, canFile }) => {
+      const myUserId = socket.data?.userId;
+      if (roomStates[roomId] && roomStates[roomId].host === myUserId) {
+        const targetUserId = roomStates[roomId].sockets[targetSocketId];
+        if (targetUserId && roomStates[roomId].permissions[targetUserId]) {
+          roomStates[roomId].permissions[targetUserId] = { canText, canFile };
           broadcastPermissions(roomId);
         }
       }
@@ -88,7 +117,8 @@ app.prepare().then(() => {
      * @param {string} payload.text - The current text buffer state.
      */
     socket.on("text-change", ({ roomId, text }) => {
-      if (roomStates[roomId] && roomStates[roomId].permissions[socket.id]?.canText) {
+      const myUserId = socket.data?.userId;
+      if (roomStates[roomId] && roomStates[roomId].permissions[myUserId]?.canText) {
         socket.to(roomId).emit("text-update", text);
       }
     });
@@ -119,33 +149,32 @@ app.prepare().then(() => {
      */
     socket.on("leave-room", (roomId) => {
       socket.leave(roomId);
+      const userId = socket.data?.userId;
       console.log(`Socket ${socket.id} left room ${roomId}`);
       socket.to(roomId).emit("user-left", socket.id);
       
-      if (roomStates[roomId] && roomStates[roomId].permissions[socket.id]) {
-        delete roomStates[roomId].permissions[socket.id];
+      if (roomStates[roomId]) {
+        delete roomStates[roomId].sockets[socket.id];
+        // We do NOT delete permissions immediately, so they can recover them if they refresh
+        autoAssignHost(roomId, userId);
+        broadcastPermissions(roomId);
+        broadcastUserCount(roomId);
       }
-      autoAssignHost(roomId);
-      broadcastPermissions(roomId);
-      
-      const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-      io.to(roomId).emit("room-user-count", roomSize);
     });
 
     socket.on("disconnecting", () => {
+      const userId = socket.data?.userId;
       // Notify all rooms the user was in
       socket.rooms.forEach((roomId) => {
         if (roomId !== socket.id) {
           socket.to(roomId).emit("user-left", socket.id);
           
-          if (roomStates[roomId] && roomStates[roomId].permissions[socket.id]) {
-            delete roomStates[roomId].permissions[socket.id];
+          if (roomStates[roomId]) {
+            delete roomStates[roomId].sockets[socket.id];
+            autoAssignHost(roomId, userId);
+            broadcastPermissions(roomId);
+            broadcastUserCount(roomId);
           }
-          autoAssignHost(roomId);
-          broadcastPermissions(roomId);
-          
-          const roomSize = (io.sockets.adapter.rooms.get(roomId)?.size || 1) - 1;
-          io.to(roomId).emit("room-user-count", roomSize);
         }
       });
     });

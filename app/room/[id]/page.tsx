@@ -40,6 +40,16 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const [files, setFiles] = useState<{name: string, url: string, size: number}[]>([]);
   const [peerStates, setPeerStates] = useState<Record<string, string>>({});
   const [roomState, setRoomState] = useState<any>(null);
+  const [userId, setUserId] = useState<string>("");
+  
+  useEffect(() => {
+    let storedId = localStorage.getItem("pastex_user_id");
+    if (!storedId) {
+      storedId = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+      localStorage.setItem("pastex_user_id", storedId);
+    }
+    setUserId(storedId);
+  }, []);
   
   const socketRef = useRef<Socket | null>(null);
   const peersRef = useRef<Record<string, RTCPeerConnection>>({});
@@ -122,7 +132,11 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
       peer.ondatachannel = (event) => {
         dataChannelsRef.current[targetSocketId] = event.channel;
         event.channel.onmessage = handleDataChannelMessage;
-        event.channel.onopen = () => setPeerStates(prev => ({ ...prev, [targetSocketId]: 'data-channel-open' }));
+        if (event.channel.readyState === 'open') {
+          setPeerStates(prev => ({ ...prev, [targetSocketId]: 'data-channel-open' }));
+        } else {
+          event.channel.onopen = () => setPeerStates(prev => ({ ...prev, [targetSocketId]: 'data-channel-open' }));
+        }
       };
     }
 
@@ -148,12 +162,14 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   };
 
   useEffect(() => {
+    if (!userId) return;
+
     const socket = io();
     socketRef.current = socket;
 
     socket.on("connect", () => {
       setIsConnected(true);
-      socket.emit("join-room", roomId);
+      socket.emit("join-room", { roomId, userId });
     });
 
     socket.on("permissions-updated", (state: any) => {
@@ -236,19 +252,21 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
       socket.emit("leave-room", roomId);
       socket.disconnect();
     };
-  }, [roomId, createPeerConnection]);
+  }, [roomId, userId, createPeerConnection]);
 
-  const mySocketId = socketRef.current?.id;
-  const isHost = !!(mySocketId && roomState?.host === mySocketId);
-  const myPermissions = (mySocketId && roomState?.permissions?.[mySocketId]) || { canText: false, canFile: false };
+  const isHost = !!(userId && roomState?.host === userId);
+  const myPermissions = (userId && roomState?.permissions?.[userId]) || { canText: false, canFile: false };
 
-  const togglePermission = (targetId: string, type: 'canText' | 'canFile') => {
+  const togglePermission = (targetSocketId: string, type: 'canText' | 'canFile') => {
     if (!isHost || !roomState) return;
-    const current = roomState.permissions[targetId] || { canText: false, canFile: false };
+    const targetUserId = roomState.sockets[targetSocketId];
+    if (!targetUserId) return;
+    
+    const current = roomState.permissions[targetUserId] || { canText: false, canFile: false };
     const newPerms = { ...current, [type]: !current[type] };
     socketRef.current?.emit("update-permission", {
       roomId,
-      targetId,
+      targetSocketId,
       canText: newPerms.canText,
       canFile: newPerms.canFile
     });
@@ -397,11 +415,11 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
               </h3>
               <div className="flex flex-col gap-2">
                 {/* Current User */}
-                {mySocketId && (
+                {userId && (
                   <div className="flex flex-col gap-2 p-2 border-2 border-neo-yellow/30 bg-neo-yellow/10">
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-base">{getPeerName(mySocketId)}</span>
+                        <span className="font-bold text-base">{getPeerName(userId)}</span>
                         <span className="bg-neo-blue text-white text-[10px] px-1 font-black">YOU</span>
                         {isHost && <span className="bg-neo-yellow text-neo-black text-[10px] px-1 font-black">HOST</span>}
                       </div>
@@ -414,7 +432,9 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
                 
                 {/* Other Peers */}
                 {Object.entries(peerStates).map(([id, state]) => {
-                  const isThisPeerHost = roomState?.host === id;
+                  const targetUserId = roomState?.sockets?.[id] || id;
+                  const isThisPeerHost = roomState?.host === targetUserId;
+                  const targetPerms = roomState?.permissions?.[targetUserId] || { canText: false, canFile: false };
                   
                   const isConnected = state === 'data-channel-open';
                   const isFailed = state === 'failed' || state === 'disconnected';
@@ -424,20 +444,20 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
                     <div key={id} className="flex flex-col gap-2 p-2 border border-white/10">
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-base">{getPeerName(id)}</span>
+                          <span className="font-bold text-base">{getPeerName(targetUserId)}</span>
                           {isThisPeerHost && <span className="bg-neo-yellow text-neo-black text-[10px] px-1 font-black">HOST</span>}
                         </div>
                         <span className={`px-2 py-0.5 border-2 ${isConnected ? 'border-neo-green bg-neo-green/20 text-neo-green' : isFailed ? 'border-neo-red bg-neo-red/20 text-neo-red' : 'border-neo-yellow bg-neo-yellow/20 text-neo-yellow'}`}>
                           [{displayState}]
                         </span>
                       </div>
-                      {isHost && roomState?.permissions?.[id] && (
+                      {isHost && roomState?.permissions?.[targetUserId] && (
                         <div className="flex gap-2 justify-end mt-1">
-                          <button onClick={() => togglePermission(id, 'canText')} className={`px-2 py-1 text-xs font-bold border-2 hover:opacity-80 transition-opacity ${roomState.permissions[id].canText ? 'bg-neo-green text-neo-black border-neo-green' : 'bg-transparent text-neo-white border-white/40'}`}>
-                            {roomState.permissions[id].canText ? 'TEXT: ON' : 'TEXT: OFF'}
+                          <button onClick={() => togglePermission(id, 'canText')} className={`px-2 py-1 text-xs font-bold border-2 hover:opacity-80 transition-opacity ${targetPerms.canText ? 'bg-neo-green text-neo-black border-neo-green' : 'bg-transparent text-neo-white border-white/40'}`}>
+                            {targetPerms.canText ? 'TEXT: ON' : 'TEXT: OFF'}
                           </button>
-                          <button onClick={() => togglePermission(id, 'canFile')} className={`px-2 py-1 text-xs font-bold border-2 hover:opacity-80 transition-opacity ${roomState.permissions[id].canFile ? 'bg-neo-pink text-neo-black border-neo-pink' : 'bg-transparent text-neo-white border-white/40'}`}>
-                            {roomState.permissions[id].canFile ? 'FILE: ON' : 'FILE: OFF'}
+                          <button onClick={() => togglePermission(id, 'canFile')} className={`px-2 py-1 text-xs font-bold border-2 hover:opacity-80 transition-opacity ${targetPerms.canFile ? 'bg-neo-pink text-neo-black border-neo-pink' : 'bg-transparent text-neo-white border-white/40'}`}>
+                            {targetPerms.canFile ? 'FILE: ON' : 'FILE: OFF'}
                           </button>
                         </div>
                       )}
