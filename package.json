@@ -1,17 +1,38 @@
 {
-  "name": "my-app",
-  "version": "0.1.0",
-  "private": true,
+  "name": "pastex",
+  "version": "1.0.0",
+  "description": "Share clipboard text and transfer files peer-to-peer instantly. No logins. No limits. Features a Neo-Brutalist UI.",
+  "type": "module",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jerry-619/pastex.git"
+  },
+  "keywords": [
+    "p2p",
+    "webrtc",
+    "file-transfer",
+    "clipboard",
+    "realtime",
+    "socket.io",
+    "nextjs",
+    "neo-brutalism"
+  ],
+  "author": "Fardeen Beigh",
+  "license": "MIT",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node server.js",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "NODE_ENV=production node server.js",
+    "lint": "next lint"
   },
   "dependencies": {
     "next": "16.2.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

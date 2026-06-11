@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<div align="center">
+  <h1 align="center">PASTEX_</h1>
+  <p align="center">
+    <strong>Share clipboard text and transfer files peer-to-peer instantly. No logins. No limits.</strong>
+  </p>
+  <p align="center">
+    <a href="https://github.com/jerry-619/pastex/actions/workflows/ci.yml">
+      <img src="https://github.com/jerry-619/pastex/actions/workflows/ci.yml/badge.svg" alt="CI Status" />
+    </a>
+    <a href="https://github.com/jerry-619/pastex/blob/main/LICENSE">
+      <img src="https://img.shields.io/github/license/jerry-619/pastex?style=flat-square&color=FF70A6" alt="MIT License" />
+    </a>
+    <img src="https://img.shields.io/github/stars/jerry-619/pastex?style=flat-square&color=FBFF48" alt="GitHub Stars" />
+    <img src="https://img.shields.io/github/forks/jerry-619/pastex?style=flat-square&color=33FF57" alt="GitHub Forks" />
+  </p>
+</div>
 
-## Getting Started
+<hr />
 
-First, run the development server:
+## ⚡ What is Pastex?
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+**Pastex** is a real-time, browser-based sharing application built with a stunning **Neo-Brutalist** aesthetic. It allows you to instantly share text and files across devices without needing to log in, download software, or rely on third-party cloud storage servers for your files.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Files are transferred directly between devices using **WebRTC Peer-to-Peer (P2P)** technology, ensuring maximum speed and complete privacy.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## ✨ Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Peer-to-Peer File Transfer:** Send large files directly to other peers. Your files never touch a centralized server.
+- **Real-Time Text Sync:** A shared clipboard that synchronizes instantly across all connected devices using WebSockets.
+- **No Logins Required:** Generate a random 6-character room code and instantly invite peers.
+- **Neo-Brutalism UI:** High-contrast, bold typography, hard shadows, and physical "clicky" buttons.
+- **Cross-Platform:** Works in any modern web browser (Mobile, Desktop, Tablet).
 
-## Learn More
+## 🏗️ Architecture
 
-To learn more about Next.js, take a look at the following resources:
+Pastex uses a hybrid architecture for maximum performance and privacy:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Next.js 15 (App Router)**: Powers the React frontend and fast UI rendering.
+2. **Socket.io (Custom Node Server)**: Acts as the **Signaling Server**. It synchronizes the text buffer and exchanges WebRTC SDP offers/answers between peers.
+3. **WebRTC RTCDataChannel**: Once peers are connected via Socket.io, a direct P2P data channel is opened. File chunks are streamed securely and directly between browsers.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🚀 Quick Start
 
-## Deploy on Vercel
+### Prerequisites
+- Node.js >= 18.17.0
+- npm or yarn
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Local Development
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/jerry-619/pastex.git
+   cd pastex
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
+   *Note: Pastex uses a custom `server.js` to run Next.js and Socket.io on the same port.*
+
+4. **Open in Browser:**
+   Navigate to `http://localhost:3000`.
+
+## 🤝 Contributing
+
+We welcome contributions! Whether it's a bug fix, new feature, or design tweak, please check out our [Contributing Guide](CONTRIBUTING.md) to get started.
+
+Please ensure your pull requests pass all linting and build checks before submitting.
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 👨‍💻 Author
+
+Developed and maintained by **Fardeen Beigh** ([@jerry-619](https://github.com/jerry-619)).

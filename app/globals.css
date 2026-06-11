@@ -1,26 +1,51 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --color-neo-yellow: #FBFF48;
+  --color-neo-pink: #FF70A6;
+  --color-neo-blue: #3B82F6;
+  --color-neo-green: #33FF57;
+  --color-neo-purple: #A855F7;
+  --color-neo-orange: #FF9F1C;
+  --color-neo-red: #FF2A2A;
+  --color-neo-white: #FFFDF5;
+  --color-neo-black: #121212;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --shadow-hard: 4px 4px 0px 0px #121212;
+  --shadow-hard-sm: 2px 2px 0px 0px #121212;
+  --shadow-hard-lg: 8px 8px 0px 0px #121212;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #FFFDF5;
+  background-image:
+    radial-gradient(#121212 1px, transparent 1px),
+    linear-gradient(to right, #e5e5e5 1px, transparent 1px),
+    linear-gradient(to bottom, #e5e5e5 1px, transparent 1px);
+  background-size: 40px 40px, 100px 100px, 100px 100px;
+  color: #121212;
+  /* Use our custom display font by default */
+  font-family: var(--font-display);
+}
+
+@layer utilities {
+  /* Common utility for buttons to create the 'press' effect */
+  .btn-press {
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .btn-press:active {
+      transform: translate(4px, 4px);
+      box-shadow: none;
+    }
+  }
+  /* For mobile, just remove the shadow to simulate press without moving the hit area */
+  @media (hover: none) {
+    .btn-press:active {
+      box-shadow: none;
+    }
+  }
 }
