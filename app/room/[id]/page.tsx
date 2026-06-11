@@ -13,6 +13,23 @@ const ICE_SERVERS = {
 
 const CHUNK_SIZE = 16384; // 16KB
 
+const getPeerName = (id: string) => {
+  const adjectives = ["Neon", "Cyber", "Hyper", "Mega", "Cool", "Smart", "Brave", "Chill", "Wild", "Calm", "Epic", "Fast", "Bold", "Swift", "Bright"];
+  const nouns = ["Tiger", "Apple", "Mars", "Comet", "Mango", "Wolf", "Pluto", "Shark", "Saturn", "Eagle", "Falcon", "Berry", "Dragon", "Panda", "Nova"];
+  
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31) + id.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  const positiveHash = Math.abs(hash);
+  
+  const adj = adjectives[positiveHash % adjectives.length];
+  const noun = nouns[Math.floor(positiveHash / adjectives.length) % nouns.length];
+  
+  return `${adj} ${noun}`;
+};
+
 export default function RoomDashboard({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const roomId = resolvedParams.id;
@@ -22,6 +39,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const [isConnected, setIsConnected] = useState(false);
   const [files, setFiles] = useState<{name: string, url: string, size: number}[]>([]);
   const [peerStates, setPeerStates] = useState<Record<string, string>>({});
+  const [roomState, setRoomState] = useState<any>(null);
   
   const socketRef = useRef<Socket | null>(null);
   const peersRef = useRef<Record<string, RTCPeerConnection>>({});
@@ -138,6 +156,10 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
       socket.emit("join-room", roomId);
     });
 
+    socket.on("permissions-updated", (state: any) => {
+      setRoomState(state);
+    });
+
     socket.on("disconnect", () => {
       setIsConnected(false);
     });
@@ -216,7 +238,24 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
     };
   }, [roomId, createPeerConnection]);
 
+  const mySocketId = socketRef.current?.id;
+  const isHost = !!(mySocketId && roomState?.host === mySocketId);
+  const myPermissions = (mySocketId && roomState?.permissions?.[mySocketId]) || { canText: false, canFile: false };
+
+  const togglePermission = (targetId: string, type: 'canText' | 'canFile') => {
+    if (!isHost || !roomState) return;
+    const current = roomState.permissions[targetId] || { canText: false, canFile: false };
+    const newPerms = { ...current, [type]: !current[type] };
+    socketRef.current?.emit("update-permission", {
+      roomId,
+      targetId,
+      canText: newPerms.canText,
+      canFile: newPerms.canFile
+    });
+  };
+
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (!myPermissions.canText) return;
     const text = e.target.value;
     setClipboardText(text);
     if (socketRef.current) {
@@ -224,7 +263,21 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
     }
   };
 
+  const handleClearText = () => {
+    if (!myPermissions.canText) return;
+    setClipboardText("");
+    if (socketRef.current) {
+      socketRef.current.emit("text-change", { roomId, text: "" });
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!myPermissions.canFile) {
+      alert("You don't have permission to send files.");
+      e.target.value = '';
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -309,14 +362,23 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
             TEXT_BUFFER
           </h2>
           
-          <div className="flex-1 bg-white border-4 border-neo-black flex flex-col shadow-hard-lg focus-within:bg-neo-yellow transition-colors duration-300">
+          <div className={`flex-1 bg-white border-4 border-neo-black flex flex-col shadow-hard-lg transition-colors duration-300 ${myPermissions.canText ? 'focus-within:bg-neo-yellow' : 'bg-gray-100'}`}>
             <textarea
-              className="w-full flex-1 bg-transparent resize-none outline-none text-neo-black p-6 font-mono text-lg font-medium placeholder-neo-black/40"
-              placeholder="> Type or paste text here... it syncs instantly with all peers."
+              className={`w-full flex-1 bg-transparent resize-none outline-none text-neo-black p-6 font-mono text-lg font-medium ${!myPermissions.canText ? 'cursor-not-allowed opacity-60' : 'placeholder-neo-black/40'}`}
+              placeholder={myPermissions.canText ? "> Type or paste text here... it syncs instantly with all peers." : "> You do not have permission to type."}
               value={clipboardText}
               onChange={handleTextChange}
+              readOnly={!myPermissions.canText}
             />
-            <div className="flex justify-end p-4 border-t-4 border-neo-black bg-neo-white">
+            <div className="flex justify-end gap-4 p-4 border-t-4 border-neo-black bg-neo-white">
+              {myPermissions.canText && (
+                <button 
+                  onClick={handleClearText}
+                  className="bg-neo-red text-white border-4 border-neo-black font-black uppercase px-6 py-2 shadow-hard btn-press hover:bg-neo-yellow hover:text-neo-black transition-colors"
+                >
+                  CLEAR TEXT
+                </button>
+              )}
               <button 
                 onClick={() => navigator.clipboard.writeText(clipboardText)}
                 className="bg-neo-blue text-white border-4 border-neo-black font-black uppercase px-6 py-2 shadow-hard btn-press hover:bg-neo-pink transition-colors"
@@ -326,19 +388,62 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
             </div>
           </div>
 
-          {/* WebRTC Status Terminal */}
+          {/* Connected Devices */}
           {Object.keys(peerStates).length > 0 && (
             <div className="bg-neo-black border-4 border-neo-black p-4 shadow-hard text-neo-green font-mono">
-              <h3 className="text-xs uppercase tracking-widest text-white/50 mb-3 border-b-2 border-white/20 pb-2">WebRTC_Subsystems</h3>
+              <h3 className="text-xs uppercase tracking-widest text-white/50 mb-3 border-b-2 border-white/20 pb-2 flex justify-between items-center">
+                <span>CONNECTED_DEVICES</span>
+                {isHost && <span className="text-neo-yellow border border-neo-yellow px-1">HOST</span>}
+              </h3>
               <div className="flex flex-col gap-2">
-                {Object.entries(peerStates).map(([id, state]) => (
-                  <div key={id} className="flex items-center justify-between text-sm">
-                    <span> peer_{id.substring(0, 6)}</span>
-                    <span className={`px-2 py-0.5 border-2 ${state === 'data-channel-open' ? 'border-neo-green bg-neo-green/20 text-neo-green' : state === 'failed' || state === 'disconnected' ? 'border-neo-red bg-neo-red/20 text-neo-red' : 'border-neo-yellow bg-neo-yellow/20 text-neo-yellow'}`}>
-                      [{state.toUpperCase()}]
-                    </span>
+                {/* Current User */}
+                {mySocketId && (
+                  <div className="flex flex-col gap-2 p-2 border-2 border-neo-yellow/30 bg-neo-yellow/10">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-base">{getPeerName(mySocketId)}</span>
+                        <span className="bg-neo-blue text-white text-[10px] px-1 font-black">YOU</span>
+                        {isHost && <span className="bg-neo-yellow text-neo-black text-[10px] px-1 font-black">HOST</span>}
+                      </div>
+                      <span className="px-2 py-0.5 border-2 border-neo-green bg-neo-green/20 text-neo-green">
+                        [ONLINE]
+                      </span>
+                    </div>
                   </div>
-                ))}
+                )}
+                
+                {/* Other Peers */}
+                {Object.entries(peerStates).map(([id, state]) => {
+                  const isThisPeerHost = roomState?.host === id;
+                  
+                  const isConnected = state === 'data-channel-open';
+                  const isFailed = state === 'failed' || state === 'disconnected';
+                  const displayState = isConnected ? 'CONNECTED' : isFailed ? 'DISCONNECTED' : 'CONNECTING...';
+                  
+                  return (
+                    <div key={id} className="flex flex-col gap-2 p-2 border border-white/10">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-base">{getPeerName(id)}</span>
+                          {isThisPeerHost && <span className="bg-neo-yellow text-neo-black text-[10px] px-1 font-black">HOST</span>}
+                        </div>
+                        <span className={`px-2 py-0.5 border-2 ${isConnected ? 'border-neo-green bg-neo-green/20 text-neo-green' : isFailed ? 'border-neo-red bg-neo-red/20 text-neo-red' : 'border-neo-yellow bg-neo-yellow/20 text-neo-yellow'}`}>
+                          [{displayState}]
+                        </span>
+                      </div>
+                      {isHost && roomState?.permissions?.[id] && (
+                        <div className="flex gap-2 justify-end mt-1">
+                          <button onClick={() => togglePermission(id, 'canText')} className={`px-2 py-1 text-xs font-bold border-2 hover:opacity-80 transition-opacity ${roomState.permissions[id].canText ? 'bg-neo-green text-neo-black border-neo-green' : 'bg-transparent text-neo-white border-white/40'}`}>
+                            {roomState.permissions[id].canText ? 'TEXT: ON' : 'TEXT: OFF'}
+                          </button>
+                          <button onClick={() => togglePermission(id, 'canFile')} className={`px-2 py-1 text-xs font-bold border-2 hover:opacity-80 transition-opacity ${roomState.permissions[id].canFile ? 'bg-neo-pink text-neo-black border-neo-pink' : 'bg-transparent text-neo-white border-white/40'}`}>
+                            {roomState.permissions[id].canFile ? 'FILE: ON' : 'FILE: OFF'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -351,12 +456,12 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
             DATA_TRANSFER
           </h2>
           
-          <label className="flex-shrink-0 border-4 border-neo-black bg-neo-white flex flex-col items-center justify-center p-12 text-center hover:bg-neo-blue hover:text-white transition-colors cursor-pointer shadow-hard-lg group btn-press">
-            <input type="file" className="hidden" onChange={handleFileUpload} />
-            <div className="bg-neo-pink border-4 border-neo-black p-4 mb-6 shadow-hard group-hover:scale-110 transition-transform">
+          <label className={`flex-shrink-0 border-4 border-neo-black bg-neo-white flex flex-col items-center justify-center p-12 text-center transition-colors shadow-hard-lg ${myPermissions.canFile ? 'hover:bg-neo-blue hover:text-white cursor-pointer group btn-press' : 'opacity-60 cursor-not-allowed bg-gray-100'}`}>
+            <input type="file" className="hidden" onChange={handleFileUpload} disabled={!myPermissions.canFile} />
+            <div className={`bg-neo-pink border-4 border-neo-black p-4 mb-6 shadow-hard ${myPermissions.canFile ? 'group-hover:scale-110 transition-transform' : ''}`}>
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter" className="text-neo-black"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
             </div>
-            <p className="text-3xl font-black uppercase mb-2">SELECT FILE</p>
+            <p className="text-3xl font-black uppercase mb-2">{myPermissions.canFile ? 'SELECT FILE' : 'NO PERMISSION'}</p>
             <p className="text-base font-mono font-bold border-t-2 border-current pt-2 mt-2 w-1/2 mx-auto">
               Broadcasts via P2P
             </p>

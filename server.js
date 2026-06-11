@@ -15,6 +15,31 @@ app.prepare().then(() => {
 
   // Initialize Socket.io
   const io = new Server(httpServer);
+  
+  // Track room hosts and permissions
+  const roomStates = {};
+
+  const broadcastPermissions = (roomId) => {
+    if (roomStates[roomId]) {
+      io.to(roomId).emit("permissions-updated", roomStates[roomId]);
+    }
+  };
+
+  const autoAssignHost = (roomId) => {
+    const room = io.sockets.adapter.rooms.get(roomId);
+    if (!room || room.size === 0) {
+      delete roomStates[roomId];
+      return;
+    }
+    if (roomStates[roomId] && !room.has(roomStates[roomId].host)) {
+      const nextHost = room.values().next().value;
+      if (nextHost) {
+        roomStates[roomId].host = nextHost;
+        roomStates[roomId].permissions[nextHost] = { canText: true, canFile: true };
+        broadcastPermissions(roomId);
+      }
+    }
+  };
 
   io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
@@ -27,12 +52,33 @@ app.prepare().then(() => {
       socket.join(roomId);
       console.log(`Socket ${socket.id} joined room ${roomId}`);
       
+      if (!roomStates[roomId]) {
+        roomStates[roomId] = { host: socket.id, permissions: {} };
+      }
+      // By default, only the host can text and send files
+      const isHost = roomStates[roomId].host === socket.id;
+      roomStates[roomId].permissions[socket.id] = { canText: isHost, canFile: isHost };
+      
       // Notify others in the room
       socket.to(roomId).emit("user-joined", socket.id);
       
       // Get count of clients in room
       const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
       io.to(roomId).emit("room-user-count", roomSize);
+      
+      broadcastPermissions(roomId);
+    });
+
+    /**
+     * Handle host toggling permissions
+     */
+    socket.on("update-permission", ({ roomId, targetId, canText, canFile }) => {
+      if (roomStates[roomId] && roomStates[roomId].host === socket.id) {
+        if (roomStates[roomId].permissions[targetId]) {
+          roomStates[roomId].permissions[targetId] = { canText, canFile };
+          broadcastPermissions(roomId);
+        }
+      }
     });
 
     /**
@@ -42,7 +88,9 @@ app.prepare().then(() => {
      * @param {string} payload.text - The current text buffer state.
      */
     socket.on("text-change", ({ roomId, text }) => {
-      socket.to(roomId).emit("text-update", text);
+      if (roomStates[roomId] && roomStates[roomId].permissions[socket.id]?.canText) {
+        socket.to(roomId).emit("text-update", text);
+      }
     });
 
     /**
@@ -74,6 +122,12 @@ app.prepare().then(() => {
       console.log(`Socket ${socket.id} left room ${roomId}`);
       socket.to(roomId).emit("user-left", socket.id);
       
+      if (roomStates[roomId] && roomStates[roomId].permissions[socket.id]) {
+        delete roomStates[roomId].permissions[socket.id];
+      }
+      autoAssignHost(roomId);
+      broadcastPermissions(roomId);
+      
       const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
       io.to(roomId).emit("room-user-count", roomSize);
     });
@@ -83,6 +137,13 @@ app.prepare().then(() => {
       socket.rooms.forEach((roomId) => {
         if (roomId !== socket.id) {
           socket.to(roomId).emit("user-left", socket.id);
+          
+          if (roomStates[roomId] && roomStates[roomId].permissions[socket.id]) {
+            delete roomStates[roomId].permissions[socket.id];
+          }
+          autoAssignHost(roomId);
+          broadcastPermissions(roomId);
+          
           const roomSize = (io.sockets.adapter.rooms.get(roomId)?.size || 1) - 1;
           io.to(roomId).emit("room-user-count", roomSize);
         }

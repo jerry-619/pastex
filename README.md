@@ -4,9 +4,6 @@
     <strong>Share clipboard text and transfer files peer-to-peer instantly. No logins. No limits.</strong>
   </p>
   <p align="center">
-    <a href="https://github.com/jerry-619/pastex/actions/workflows/ci.yml">
-      <img src="https://github.com/jerry-619/pastex/actions/workflows/ci.yml/badge.svg" alt="CI Status" />
-    </a>
     <a href="https://github.com/jerry-619/pastex/blob/main/LICENSE">
       <img src="https://img.shields.io/github/license/jerry-619/pastex?style=flat-square&color=FF70A6" alt="MIT License" />
     </a>
