@@ -19,6 +19,7 @@ CLAUDE.md
 /.next/
 /out/
 package-lock.json
+project_documentation.txt
 
 # production
 /build

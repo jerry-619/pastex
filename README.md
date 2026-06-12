@@ -1,7 +1,7 @@
 <div align="center">
   <h1 align="center">PASTEX_</h1>
   <p align="center">
-    <strong>Share clipboard text and transfer files peer-to-peer instantly. No logins. No limits.</strong>
+    <strong>Share clipboard text and transfer files peer-to-peer instantly. No logins. High privacy.</strong>
   </p>
   <p align="center">
     <a href="https://github.com/jerry-619/pastex/blob/main/LICENSE">
@@ -22,8 +22,11 @@ Files are transferred directly between devices using **WebRTC Peer-to-Peer (P2P)
 
 ## ✨ Features
 
-- **Peer-to-Peer File Transfer:** Send large files directly to other peers. Your files never touch a centralized server.
+- **Peer-to-Peer File Transfer:** Send files directly to other peers. Your files never touch a centralized server.
 - **Real-Time Text Sync:** A shared clipboard that synchronizes instantly across all connected devices using WebSockets.
+- **Host Permissions & Read-Only UI:** Room creators can toggle text-editing and file-sending permissions for guests.
+- **In-Browser Media Previews:** Preview images, videos, audio, and PDF files instantly without downloading.
+- **Firewall Traversal (TURN Support):** Works reliably even on strict college or corporate networks.
 - **No Logins Required:** Generate a random 6-character room code and instantly invite peers.
 - **Neo-Brutalism UI:** High-contrast, bold typography, hard shadows, and physical "clicky" buttons.
 - **Cross-Platform:** Works in any modern web browser (Mobile, Desktop, Tablet).
@@ -55,13 +58,19 @@ Pastex uses a hybrid architecture for maximum performance and privacy:
    npm install
    ```
 
-3. **Start the development server:**
+3. **Environment Variables (Optional but recommended):**
+   Copy `.env.example` to `.env.local` and add your TURN server credentials (e.g., from Metered.ca or Twilio) for reliable file transfers behind strict firewalls.
+   ```bash
+   cp .env.example .env.local
+   ```
+
+4. **Start the development server:**
    ```bash
    npm run dev
    ```
    *Note: Pastex uses a custom `server.js` to run Next.js and Socket.io on the same port.*
 
-4. **Open in Browser:**
+5. **Open in Browser:**
    Navigate to `http://localhost:3000`.
 
 ## 🤝 Contributing
