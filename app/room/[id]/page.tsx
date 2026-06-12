@@ -57,7 +57,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const [clipboardText, setClipboardText] = useState("");
   const [userCount, setUserCount] = useState(1);
   const [isConnected, setIsConnected] = useState(false);
-  const [files, setFiles] = useState<{name: string, url: string, size: number}[]>([]);
+  const [files, setFiles] = useState<{name: string, url: string, size: number, type: string}[]>([]);
   const [peerStates, setPeerStates] = useState<Record<string, string>>({});
   const [roomState, setRoomState] = useState<any>(null);
   const [userId, setUserId] = useState<string>("");
@@ -65,6 +65,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const [isDragging, setIsDragging] = useState(false);
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, onConfirm?: () => void } | null>(null);
   const [showQrCode, setShowQrCode] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{url: string, type: string, name: string} | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const myPermissionsRef = useRef({ canText: false, canFile: false });
 
@@ -94,6 +95,22 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const dataChannelsRef = useRef<Record<string, RTCDataChannel>>({});
   const receivedBuffersRef = useRef<Record<string, { chunks: ArrayBuffer[], totalSize: number, receivedSize: number, name: string, type: string }>>({});
   const iceCandidateQueueRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
+  const filesEndRef = useRef<HTMLDivElement>(null);
+  const activeTransfersEndRef = useRef<HTMLDivElement>(null);
+  const activeTransfersLengthRef = useRef(0);
+
+  useEffect(() => {
+    if (filesEndRef.current) {
+      filesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [files]);
+
+  useEffect(() => {
+    if (activeTransfersEndRef.current && activeTransfers.length > activeTransfersLengthRef.current) {
+      activeTransfersEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+    activeTransfersLengthRef.current = activeTransfers.length;
+  }, [activeTransfers.length]);
 
   /**
    * Handles incoming chunked data from WebRTC DataChannels.
@@ -117,7 +134,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
         if (bufferInfo) {
           const blob = new Blob(bufferInfo.chunks, { type: bufferInfo.type });
           const url = URL.createObjectURL(blob);
-          setFiles(prev => [...prev, { name: bufferInfo.name, url, size: bufferInfo.totalSize }]);
+          setFiles(prev => [...prev, { name: bufferInfo.name, url, size: bufferInfo.totalSize, type: bufferInfo.type }]);
           setActiveTransfers(prev => prev.filter(t => t.id !== data.id));
           delete receivedBuffersRef.current[data.id];
         }
@@ -355,11 +372,11 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
     }
   };
 
-  const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
   const processFile = async (file: File) => {
     if (file.size > MAX_FILE_SIZE) {
-      showAlert("FILE TOO LARGE", `Maximum allowed size is 20MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
+      showAlert("FILE TOO LARGE", `Maximum allowed size is 50MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
       return;
     }
 
@@ -412,7 +429,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
 
       channels.forEach(channel => channel.send(eofData));
       const url = URL.createObjectURL(file);
-      setFiles(prev => [...prev, { name: file.name, url, size: file.size }]);
+      setFiles(prev => [...prev, { name: file.name, url, size: file.size, type: file.type }]);
       setActiveTransfers(prev => prev.filter(t => t.id !== fileId));
     };
 
@@ -490,6 +507,37 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
             >
               CLOSE
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Media Preview Modal */}
+      {previewFile && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-neo-black/90 backdrop-blur-md p-4 md:p-8">
+          <div className="bg-neo-white border-4 border-neo-black p-4 md:p-6 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] w-full max-w-5xl h-full max-h-[90vh] animate-bounce-in flex flex-col">
+            <div className="flex justify-between items-center mb-4 border-b-4 border-neo-black pb-2">
+              <h2 className="text-xl md:text-2xl font-black uppercase truncate max-w-[80%] text-neo-blue">{previewFile.name}</h2>
+              <button 
+                onClick={() => setPreviewFile(null)}
+                className="bg-neo-red text-white border-2 border-neo-black px-3 py-1 font-black hover:bg-neo-yellow hover:text-neo-black transition-colors shadow-hard-sm btn-press"
+              >
+                X
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-100 border-4 border-neo-black flex items-center justify-center p-2 relative">
+              {previewFile.type.startsWith('image/') && (
+                <img src={previewFile.url} alt={previewFile.name} className="max-w-full max-h-full object-contain" />
+              )}
+              {previewFile.type.startsWith('video/') && (
+                <video src={previewFile.url} controls autoPlay className="max-w-full max-h-full outline-none" />
+              )}
+              {previewFile.type.startsWith('audio/') && (
+                <audio src={previewFile.url} controls autoPlay className="w-full max-w-md" />
+              )}
+              {previewFile.type === 'application/pdf' && (
+                <iframe src={previewFile.url} className="w-full h-full border-none" title={previewFile.name} />
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -574,8 +622,13 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
             TEXT_BUFFER
           </h2>
           
-          <div className={`flex-1 bg-white border-4 border-neo-black flex flex-col shadow-hard-lg transition-colors duration-300 ${myPermissions.canText ? 'focus-within:bg-neo-yellow' : 'bg-gray-100'}`}>
-            <div className={`w-full h-[350px] md:h-[400px] lg:h-[450px] bg-transparent overflow-y-auto ${!myPermissions.canText ? 'cursor-not-allowed opacity-60' : ''}`}>
+          <div className={`flex-1 bg-white border-4 border-neo-black flex flex-col shadow-hard-lg transition-colors duration-300 relative ${myPermissions.canText ? 'focus-within:bg-neo-yellow' : 'bg-gray-100'}`}>
+            {!myPermissions.canText && (
+              <div className="absolute top-0 right-0 bg-neo-red text-white border-b-4 border-l-4 border-neo-black px-4 py-2 font-black uppercase shadow-hard-sm z-10 pointer-events-none">
+                READ ONLY
+              </div>
+            )}
+            <div className={`w-full h-[350px] md:h-[400px] lg:h-[450px] bg-transparent overflow-y-auto ${!myPermissions.canText ? 'cursor-not-allowed opacity-80' : ''}`}>
               <Editor
                 value={clipboardText}
                 onValueChange={handleTextChange}
@@ -689,7 +742,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
             </div>
             <p className="text-3xl font-black uppercase mb-2">{!myPermissions.canFile ? 'NO PERMISSION' : isDragging ? 'DROP FILE HERE' : 'SELECT OR DROP FILE'}</p>
             <p className="text-base font-mono font-bold border-t-2 border-current pt-2 mt-2 w-1/2 mx-auto">
-              Max Size: 20MB
+              Max Size: 50MB
             </p>
           </label>
 
@@ -723,6 +776,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
                   </div>
                 );
               })}
+              <div ref={activeTransfersEndRef} />
             </div>
           )}
 
@@ -741,11 +795,23 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
                       <p className="text-sm font-mono font-bold">{(f.size / 1024 / 1024).toFixed(2)} MB</p>
                     </div>
                   </div>
-                  <a href={f.url} download={f.name} className="flex-shrink-0 bg-neo-orange border-4 border-neo-black hover:bg-neo-yellow text-neo-black p-3 transition-colors shadow-hard btn-press">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                  </a>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {(f.type.startsWith('image/') || f.type.startsWith('video/') || f.type.startsWith('audio/') || f.type === 'application/pdf') && (
+                      <button 
+                        onClick={() => setPreviewFile(f)}
+                        className="bg-neo-yellow border-4 border-neo-black hover:bg-neo-blue hover:text-white text-neo-black p-3 transition-colors shadow-hard btn-press"
+                        title="Preview File"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      </button>
+                    )}
+                    <a href={f.url} download={f.name} className="bg-neo-orange border-4 border-neo-black hover:bg-neo-yellow text-neo-black p-3 transition-colors shadow-hard btn-press" title="Download File">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    </a>
+                  </div>
                 </div>
               ))}
+              <div ref={filesEndRef} />
             </div>
           )}
         </section>

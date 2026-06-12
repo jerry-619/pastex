@@ -55,7 +55,7 @@ app.prepare().then(() => {
           roomStates[roomId].permissions[nextHostId] = { canText: true, canFile: true };
           broadcastPermissions(roomId);
         }
-      }, 7000); // 3-second grace period
+      }, 7000); // 7-second grace period
     }
   };
 
