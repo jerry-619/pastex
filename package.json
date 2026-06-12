@@ -29,6 +29,7 @@
   "dependencies": {
     "highlight.js": "^11.9.0",
     "next": "16.2.9",
+    "qrcode.react": "^4.0.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-simple-code-editor": "latest",

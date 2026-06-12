@@ -7,6 +7,7 @@ import { io, Socket } from "socket.io-client";
 import Editor from "react-simple-code-editor";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.css";
+import { QRCodeSVG } from "qrcode.react";
 
 const ICE_SERVERS = {
   iceServers: [
@@ -63,6 +64,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const [activeTransfers, setActiveTransfers] = useState<ActiveTransfer[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, onConfirm?: () => void } | null>(null);
+  const [showQrCode, setShowQrCode] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const myPermissionsRef = useRef({ canText: false, canFile: false });
 
@@ -474,6 +476,24 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
         </div>
       )}
 
+      {/* QR Code Modal */}
+      {showQrCode && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-neo-black/80 backdrop-blur-sm p-4">
+          <div className="bg-neo-white border-4 border-neo-black p-6 md:p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-sm w-full animate-bounce-in flex flex-col items-center">
+            <h2 className="text-2xl font-black uppercase mb-6 border-b-4 border-neo-black w-full text-center pb-2 text-neo-blue">SCAN TO JOIN</h2>
+            <div className="bg-white border-4 border-neo-black p-4 mb-8 shadow-hard">
+              <QRCodeSVG value={typeof window !== "undefined" ? window.location.href : ""} size={200} />
+            </div>
+            <button
+              onClick={() => setShowQrCode(false)}
+              className="w-full bg-neo-red text-white border-4 border-neo-black font-black uppercase py-3 text-xl hover:bg-neo-yellow hover:text-neo-black transition-colors shadow-hard btn-press"
+            >
+              CLOSE
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notifications */}
       <div className="fixed bottom-4 right-4 z-[200] flex flex-col gap-3 pointer-events-none">
         {toasts.map(t => (
@@ -488,16 +508,16 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
 
       {/* Neo-Brutalism Header */}
       <header className="border-b-4 border-neo-black bg-neo-yellow p-4 flex flex-col md:flex-row items-center justify-between sticky top-0 z-50 shadow-hard-lg">
-        <div className="flex items-center gap-4 mb-4 md:mb-0 w-full md:w-auto">
-          <Link href="/" className="bg-neo-white border-2 border-neo-black p-2 hover:bg-neo-pink transition-colors shadow-hard-sm btn-press">
+        <div className="flex flex-wrap items-center gap-2 md:gap-4 mb-4 md:mb-0 w-full md:w-auto">
+          <Link href="/" className="bg-neo-white border-2 border-neo-black p-2 hover:bg-neo-pink transition-colors shadow-hard-sm btn-press flex-shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter">
               <path d="m15 18-6-6 6-6"/>
             </svg>
           </Link>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-black uppercase tracking-tighter">ROOM_ID:</h1>
+          <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+            <h1 className="text-xl md:text-2xl font-black uppercase tracking-tighter">ROOM:</h1>
             <div className="flex items-center gap-2">
-              <span className="bg-neo-white text-neo-black px-4 py-1 font-mono font-black text-xl border-2 border-neo-black shadow-hard-sm tracking-widest">
+              <span className="bg-neo-white text-neo-black px-2 md:px-4 py-1 font-mono font-black text-lg md:text-xl border-2 border-neo-black shadow-hard-sm tracking-widest">
                 {roomId}
               </span>
               <button 
@@ -513,16 +533,31 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
                   <path d="M5 15H4V4h11v1"></path>
                 </svg>
               </button>
+              <button 
+                onClick={() => setShowQrCode(true)}
+                className="bg-neo-yellow text-neo-black border-2 border-neo-black p-1.5 hover:bg-neo-green transition-colors shadow-hard-sm btn-press"
+                title="Show QR Code"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter">
+                  <rect x="3" y="3" width="6" height="6"></rect>
+                  <rect x="15" y="3" width="6" height="6"></rect>
+                  <rect x="3" y="15" width="6" height="6"></rect>
+                  <rect x="15" y="15" width="2" height="2"></rect>
+                  <rect x="19" y="19" width="2" height="2"></rect>
+                  <rect x="15" y="19" width="2" height="2"></rect>
+                  <rect x="19" y="15" width="2" height="2"></rect>
+                </svg>
+              </button>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-sm font-bold w-full md:w-auto justify-between md:justify-end">
-          <div className={`flex items-center gap-2 border-2 border-neo-black px-3 py-1 font-mono uppercase bg-neo-white shadow-hard-sm`}>
+        <div className="flex flex-wrap items-center gap-2 md:gap-4 text-xs md:text-sm font-bold w-full md:w-auto justify-between md:justify-end">
+          <div className={`flex items-center gap-2 border-2 border-neo-black px-2 md:px-3 py-1 font-mono uppercase bg-neo-white shadow-hard-sm`}>
             <div className={`w-3 h-3 border-2 border-neo-black ${isConnected ? 'bg-neo-green' : 'bg-neo-red'}`}></div>
             {isConnected ? 'Signaling: ONLINE' : 'Signaling: OFFLINE'}
           </div>
-          <div className="bg-neo-white border-2 border-neo-black px-3 py-1 font-mono uppercase flex items-center gap-2 shadow-hard-sm">
+          <div className="bg-neo-white border-2 border-neo-black px-2 md:px-3 py-1 font-mono uppercase flex items-center gap-2 shadow-hard-sm">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             [ {userCount} ] PEERS
           </div>
@@ -540,7 +575,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
           </h2>
           
           <div className={`flex-1 bg-white border-4 border-neo-black flex flex-col shadow-hard-lg transition-colors duration-300 ${myPermissions.canText ? 'focus-within:bg-neo-yellow' : 'bg-gray-100'}`}>
-            <div className={`w-full h-[400px] md:h-[500px] lg:h-[600px] bg-transparent overflow-y-auto ${!myPermissions.canText ? 'cursor-not-allowed opacity-60' : ''}`}>
+            <div className={`w-full h-[350px] md:h-[400px] lg:h-[450px] bg-transparent overflow-y-auto ${!myPermissions.canText ? 'cursor-not-allowed opacity-60' : ''}`}>
               <Editor
                 value={clipboardText}
                 onValueChange={handleTextChange}
