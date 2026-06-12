@@ -4,6 +4,9 @@ import { use, useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { io, Socket } from "socket.io-client";
+import Editor from "react-simple-code-editor";
+import hljs from "highlight.js";
+import "highlight.js/styles/github-dark.css";
 
 const ICE_SERVERS = {
   iceServers: [
@@ -334,9 +337,8 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
     });
   };
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleTextChange = (text: string) => {
     if (!myPermissions.canText) return;
-    const text = e.target.value;
     setClipboardText(text);
     if (socketRef.current) {
       socketRef.current.emit("text-change", { roomId, text });
@@ -494,9 +496,24 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
           </Link>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-black uppercase tracking-tighter">ROOM_ID:</h1>
-            <span className="bg-neo-white text-neo-black px-4 py-1 font-mono font-black text-xl border-2 border-neo-black shadow-hard-sm tracking-widest">
-              {roomId}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="bg-neo-white text-neo-black px-4 py-1 font-mono font-black text-xl border-2 border-neo-black shadow-hard-sm tracking-widest">
+                {roomId}
+              </span>
+              <button 
+                onClick={() => {
+                  navigator.clipboard.writeText(roomId);
+                  showToast("ROOM ID COPIED", "success");
+                }}
+                className="bg-neo-blue text-white border-2 border-neo-black p-1.5 hover:bg-neo-pink transition-colors shadow-hard-sm btn-press"
+                title="Copy Room ID"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter">
+                  <rect x="9" y="9" width="13" height="13"></rect>
+                  <path d="M5 15H4V4h11v1"></path>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -523,13 +540,20 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
           </h2>
           
           <div className={`flex-1 bg-white border-4 border-neo-black flex flex-col shadow-hard-lg transition-colors duration-300 ${myPermissions.canText ? 'focus-within:bg-neo-yellow' : 'bg-gray-100'}`}>
-            <textarea
-              className={`w-full flex-1 bg-transparent resize-none outline-none text-neo-black p-6 font-mono text-lg font-medium ${!myPermissions.canText ? 'cursor-not-allowed opacity-60' : 'placeholder-neo-black/40'}`}
-              placeholder={myPermissions.canText ? "> Type or paste text here... it syncs instantly with all peers." : "> You do not have permission to type."}
-              value={clipboardText}
-              onChange={handleTextChange}
-              readOnly={!myPermissions.canText}
-            />
+            <div className={`w-full h-[400px] md:h-[500px] lg:h-[600px] bg-transparent overflow-y-auto ${!myPermissions.canText ? 'cursor-not-allowed opacity-60' : ''}`}>
+              <Editor
+                value={clipboardText}
+                onValueChange={handleTextChange}
+                highlight={code => hljs.highlightAuto(code).value}
+                padding={24}
+                className="font-mono text-lg font-medium outline-none min-h-full"
+                style={{
+                  minHeight: "100%",
+                  fontFamily: '"Fira code", "Fira Mono", monospace',
+                }}
+                disabled={!myPermissions.canText}
+              />
+            </div>
             <div className="flex justify-end gap-4 p-4 border-t-4 border-neo-black bg-neo-white">
               {myPermissions.canText && (
                 <button 
