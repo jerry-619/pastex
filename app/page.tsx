@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Magnetic from "./components/Magnetic";
 
 export default function Home() {
@@ -127,6 +128,9 @@ export default function Home() {
           <div className="bg-neo-yellow border-2 border-neo-black px-4 py-2 shadow-hard-sm">
             &copy; {new Date().getFullYear()} Pastex.app
           </div>
+          <Link href="/how-it-works" className="bg-neo-green text-neo-black hover:bg-neo-yellow border-2 border-neo-black px-4 py-2 shadow-hard-sm transition-colors btn-press">
+            How It Works
+          </Link>
           <a href="https://github.com/jerry-619/pastex" target="_blank" rel="noopener noreferrer" className="bg-neo-blue text-white hover:bg-neo-pink border-2 border-neo-black px-4 py-2 shadow-hard-sm transition-colors btn-press">
             Open Source
           </a>
