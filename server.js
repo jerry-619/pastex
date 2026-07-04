@@ -52,7 +52,7 @@ app.prepare().then(() => {
         
         if (nextHostId) {
           roomStates[roomId].host = nextHostId;
-          roomStates[roomId].permissions[nextHostId] = { canText: true, canFile: true };
+          roomStates[roomId].permissions[nextHostId] = { canText: true, canFile: true, canVideo: true };
           broadcastPermissions(roomId);
         }
       }, 7000); // 7-second grace period
@@ -92,7 +92,7 @@ app.prepare().then(() => {
       // Assign default permissions if they don't have any yet
       if (!roomStates[roomId].permissions[userId]) {
         const isHost = roomStates[roomId].host === userId;
-        roomStates[roomId].permissions[userId] = { canText: isHost, canFile: isHost };
+        roomStates[roomId].permissions[userId] = { canText: isHost, canFile: isHost, canVideo: isHost };
       }
       
       // Notify others in the room
@@ -105,12 +105,12 @@ app.prepare().then(() => {
     /**
      * Handle host toggling permissions
      */
-    socket.on("update-permission", ({ roomId, targetSocketId, canText, canFile }) => {
+    socket.on("update-permission", ({ roomId, targetSocketId, canText, canFile, canVideo }) => {
       const myUserId = socket.data?.userId;
       if (roomStates[roomId] && roomStates[roomId].host === myUserId) {
         const targetUserId = roomStates[roomId].sockets[targetSocketId];
         if (targetUserId && roomStates[roomId].permissions[targetUserId]) {
-          roomStates[roomId].permissions[targetUserId] = { canText, canFile };
+          roomStates[roomId].permissions[targetUserId] = { canText, canFile, canVideo };
           broadcastPermissions(roomId);
         }
       }
