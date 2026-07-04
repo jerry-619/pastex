@@ -59,4 +59,15 @@ body {
       box-shadow: none;
     }
   }
+
+  @keyframes float-up {
+    0% {
+      transform: translateY(0) scale(1) rotate(0deg);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-80vh) scale(1.5) rotate(20deg);
+      opacity: 0;
+    }
+  }
 }

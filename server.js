@@ -151,6 +151,13 @@ app.prepare().then(() => {
     });
 
     /**
+     * Relays reactions to all peers in the room.
+     */
+    socket.on("send-reaction", ({ roomId, reaction }) => {
+      socket.to(roomId).emit("receive-reaction", { senderId: socket.data?.userId, reaction });
+    });
+
+    /**
      * Gracefully handles a user leaving a room.
      */
     socket.on("leave-room", (roomId) => {

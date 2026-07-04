@@ -87,16 +87,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   const [showQrCode, setShowQrCode] = useState(false);
   const [previewFile, setPreviewFile] = useState<{url: string, type: string, name: string} | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  
-  // Video Call States
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
-  const [isVideoOn, setIsVideoOn] = useState(false);
-  const [isAudioOn, setIsAudioOn] = useState(false);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-
-  const myPermissionsRef = useRef({ canText: false, canFile: false, canVideo: false });
+  const myPermissionsRef = useRef({ canText: false, canFile: false });
 
   const showAlert = (title: string, message: string, onConfirm?: () => void) => {
     setCustomAlert({ title, message, onConfirm });
@@ -202,26 +193,6 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
 
     setPeerStates(prev => ({ ...prev, [targetSocketId]: 'new' }));
 
-    peer.onnegotiationneeded = async () => {
-      try {
-        const offer = await peer.createOffer();
-        await peer.setLocalDescription(offer);
-        socketRef.current?.emit("webrtc-offer", { target: targetSocketId, caller: socketRef.current.id, sdp: peer.localDescription });
-      } catch (err) {
-        console.error("Negotiation needed error", err);
-      }
-    };
-
-    peer.ontrack = (event) => {
-      setRemoteStreams(prev => ({ ...prev, [targetSocketId]: event.streams[0] }));
-    };
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        peer.addTrack(track, localStreamRef.current!);
-      });
-    }
-
     peer.onicecandidate = (event) => {
       if (event.candidate && socketRef.current) {
         socketRef.current.emit("webrtc-ice-candidate", {
@@ -293,7 +264,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
     socket.on("permissions-updated", (state: any) => {
       setRoomState(state);
       
-      const newPerms = state.permissions?.[userId] || { canText: false, canFile: false, canVideo: false };
+      const newPerms = state.permissions?.[userId] || { canText: false, canFile: false };
       const oldPerms = myPermissionsRef.current;
       
       if (oldPerms.canText !== undefined) {
@@ -304,28 +275,6 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
       if (oldPerms.canFile !== undefined) {
         if (newPerms.canFile && !oldPerms.canFile) showToast("FILE PERMISSION GRANTED", "success");
         if (!newPerms.canFile && oldPerms.canFile) showToast("FILE PERMISSION REVOKED", "warning");
-      }
-
-      if (oldPerms.canVideo !== undefined) {
-        if (newPerms.canVideo && !oldPerms.canVideo) showToast("VIDEO PERMISSION GRANTED", "success");
-        if (!newPerms.canVideo && oldPerms.canVideo) {
-          showToast("VIDEO PERMISSION REVOKED", "warning");
-          // If video was on, turn it off
-          if (localStreamRef.current) {
-             localStreamRef.current.getTracks().forEach(track => track.stop());
-             localStreamRef.current = null;
-             setLocalStream(null);
-             setIsVideoOn(false);
-             setIsAudioOn(false);
-             
-             // Remove tracks from peers
-             Object.values(peersRef.current).forEach(peer => {
-               peer.getSenders().forEach(sender => {
-                 if (sender.track) peer.removeTrack(sender);
-               });
-             });
-          }
-        }
       }
       
       myPermissionsRef.current = newPerms;
@@ -395,11 +344,6 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
       if (dataChannelsRef.current[targetSocketId]) {
         delete dataChannelsRef.current[targetSocketId];
       }
-      setRemoteStreams(prev => {
-        const newState = { ...prev };
-        delete newState[targetSocketId];
-        return newState;
-      });
       setPeerStates(prev => {
         const newState = { ...prev };
         delete newState[targetSocketId];
@@ -415,76 +359,21 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
   }, [roomId, userId, createPeerConnection]);
 
   const isHost = !!(userId && roomState?.host === userId);
-  const myPermissions = (userId && roomState?.permissions?.[userId]) || { canText: false, canFile: false, canVideo: false };
+  const myPermissions = (userId && roomState?.permissions?.[userId]) || { canText: false, canFile: false };
 
-  const togglePermission = (targetSocketId: string, type: 'canText' | 'canFile' | 'canVideo') => {
+  const togglePermission = (targetSocketId: string, type: 'canText' | 'canFile') => {
     if (!isHost || !roomState) return;
     const targetUserId = roomState.sockets[targetSocketId];
     if (!targetUserId) return;
     
-    const current = roomState.permissions[targetUserId] || { canText: false, canFile: false, canVideo: false };
+    const current = roomState.permissions[targetUserId] || { canText: false, canFile: false };
     const newPerms = { ...current, [type]: !current[type] };
     socketRef.current?.emit("update-permission", {
       roomId,
       targetSocketId,
       canText: newPerms.canText,
-      canFile: newPerms.canFile,
-      canVideo: newPerms.canVideo
+      canFile: newPerms.canFile
     });
-  };
-
-  const toggleVideo = async () => {
-    if (!myPermissions.canVideo) {
-      showAlert("ACCESS DENIED", "You don't have permission to use video.");
-      return;
-    }
-    
-    if (localStreamRef.current) {
-      // Stop video
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-      setLocalStream(null);
-      setIsVideoOn(false);
-      setIsAudioOn(false);
-      
-      // Remove tracks from peers
-      Object.values(peersRef.current).forEach(peer => {
-        peer.getSenders().forEach(sender => {
-          if (sender.track) peer.removeTrack(sender);
-        });
-      });
-    } else {
-      // Start video
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localStreamRef.current = stream;
-        setLocalStream(stream);
-        setIsVideoOn(true);
-        setIsAudioOn(true);
-        
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-
-        // Add tracks to peers
-        Object.values(peersRef.current).forEach(peer => {
-          stream.getTracks().forEach(track => peer.addTrack(track, stream));
-        });
-      } catch (err) {
-        console.error("Error accessing media devices", err);
-        showAlert("CAMERA ERROR", "Could not access camera or microphone. Please check permissions.");
-      }
-    }
-  };
-
-  const toggleAudio = () => {
-    if (localStreamRef.current) {
-      const audioTracks = localStreamRef.current.getAudioTracks();
-      if (audioTracks.length > 0) {
-        audioTracks[0].enabled = !audioTracks[0].enabled;
-        setIsAudioOn(audioTracks[0].enabled);
-      }
-    }
   };
 
   const handleTextChange = (text: string) => {
@@ -744,7 +633,7 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
       </header>
 
       {/* Main Dashboard */}
-      <main className="flex-1 max-w-screen-2xl w-full mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8 lg:gap-12">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
         
         {/* Text Area Column */}
         <section className="flex flex-col gap-6">
@@ -843,9 +732,6 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
                           </button>
                           <button onClick={() => togglePermission(id, 'canFile')} className={`px-2 py-1 text-xs font-bold border-2 hover:opacity-80 transition-opacity ${targetPerms.canFile ? 'bg-neo-pink text-neo-black border-neo-pink' : 'bg-transparent text-neo-white border-white/40'}`}>
                             {targetPerms.canFile ? 'FILE: ON' : 'FILE: OFF'}
-                          </button>
-                          <button onClick={() => togglePermission(id, 'canVideo')} className={`px-2 py-1 text-xs font-bold border-2 hover:opacity-80 transition-opacity ${targetPerms.canVideo ? 'bg-neo-blue text-white border-neo-blue' : 'bg-transparent text-neo-white border-white/40'}`}>
-                            {targetPerms.canVideo ? 'VIDEO: ON' : 'VIDEO: OFF'}
                           </button>
                         </div>
                       )}
@@ -948,91 +834,6 @@ export default function RoomDashboard({ params }: { params: Promise<{ id: string
               <div ref={filesEndRef} />
             </div>
           )}
-        </section>
-
-        {/* Video Call Column */}
-        <section className="flex flex-col gap-6 lg:col-span-2 xl:col-span-1">
-          <h2 className="text-4xl font-black uppercase flex items-center gap-3 bg-neo-white border-4 border-neo-black p-3 shadow-hard w-fit">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter" className="text-neo-yellow"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-            FACETIME
-          </h2>
-
-          <div className="flex-1 bg-white border-4 border-neo-black flex flex-col shadow-hard-lg">
-            {!myPermissions.canVideo ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gray-100 opacity-80 min-h-[300px]">
-                <div className="bg-neo-red text-white p-4 border-4 border-neo-black shadow-hard mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" strokeLinejoin="miter"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                </div>
-                <p className="text-2xl font-black uppercase">NO PERMISSION</p>
-                <p className="font-mono mt-2 text-gray-600">Ask the host to grant you video access.</p>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col p-4 gap-4 bg-neo-white relative min-h-[300px]">
-                
-                {/* Local Video */}
-                <div className={`relative w-full aspect-video border-4 border-neo-black shadow-hard bg-neo-black ${!isVideoOn ? 'flex items-center justify-center' : ''}`}>
-                  {isVideoOn ? (
-                    <video 
-                      ref={el => { if (el && el.srcObject !== localStream) el.srcObject = localStream; }} 
-                      autoPlay 
-                      playsInline 
-                      muted 
-                      className="w-full h-full object-cover" 
-                    />
-                  ) : (
-                    <div className="text-white font-mono opacity-50 flex flex-col items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                      CAMERA OFF
-                    </div>
-                  )}
-                  {isVideoOn && (
-                    <div className="absolute top-2 left-2 bg-neo-blue text-white text-xs font-black px-2 py-1 border-2 border-neo-black z-10">
-                      YOU {isAudioOn ? '' : '(MUTED)'}
-                    </div>
-                  )}
-                </div>
-
-                {/* Remote Videos */}
-                <div className="grid grid-cols-2 gap-4 flex-1 content-start">
-                  {Object.entries(remoteStreams).map(([peerId, stream]) => {
-                    const targetUserId = roomState?.sockets?.[peerId];
-                    return (
-                      <div key={peerId} className="relative aspect-square md:aspect-video xl:aspect-square border-4 border-neo-black shadow-hard bg-neo-black">
-                        <video 
-                          autoPlay 
-                          playsInline 
-                          className="w-full h-full object-cover"
-                          ref={el => { if (el && el.srcObject !== stream) el.srcObject = stream; }}
-                        />
-                        <div className="absolute top-2 left-2 bg-neo-yellow text-neo-black text-xs font-black px-2 py-1 border-2 border-neo-black truncate max-w-[90%] z-10">
-                          {targetUserId ? getPeerName(targetUserId) : 'PEER'}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Controls */}
-                <div className="flex gap-4 mt-auto pt-4 border-t-4 border-neo-black">
-                  <button 
-                    onClick={toggleVideo}
-                    className={`flex-1 py-3 px-2 font-black uppercase text-sm border-4 border-neo-black shadow-hard btn-press transition-colors ${isVideoOn ? 'bg-neo-red text-white hover:bg-neo-yellow hover:text-neo-black' : 'bg-neo-green text-neo-black hover:bg-neo-blue hover:text-white'}`}
-                  >
-                    {isVideoOn ? 'END CALL' : 'START CALL'}
-                  </button>
-                  {isVideoOn && (
-                    <button 
-                      onClick={toggleAudio}
-                      className={`flex-1 py-3 px-2 font-black uppercase text-sm border-4 border-neo-black shadow-hard btn-press transition-colors ${isAudioOn ? 'bg-neo-white text-neo-black hover:bg-neo-red hover:text-white' : 'bg-neo-red text-white hover:bg-neo-white hover:text-neo-black'}`}
-                    >
-                      {isAudioOn ? 'MUTE MIC' : 'UNMUTE'}
-                    </button>
-                  )}
-                </div>
-
-              </div>
-            )}
-          </div>
         </section>
 
       </main>

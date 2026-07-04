@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
- allowedDevOrigins: ['rare-suns-grin.loca.lt'],
+ allowedDevOrigins: ['swift-cougars-leave.loca.lt']
   
   /* config options here */
 };
